@@ -404,7 +404,7 @@ const SC = { zen: new THREE.Color(), hor: new THREE.Color(), glow: new THREE.Col
 // WORLD: your house, opened up for play (walls with real doorways, floors, stairs, furniture)
 // World axes: +Z = east (street), +X = north. 1 unit = 1 m.
 // =====================================================================
-const lotY = (x, z) => -2.5 * Math.max(smooth(-3, -12.5, z), 0.85 * smooth(-11, -16.5, x));
+const lotY = (x, z) => -2.5 * Math.max(smooth(-3, -12.5, z), 0.85 * smooth(-11, -16.5, x) * smooth(17, 11, z));
 const FOOT = [[15.75, -10.35], [15.75, -0.225], [4.35, -0.225], [4.35, 10.43], [-10.43, 10.43], [-10.43, 7.58], [-15.75, 7.58], [-15.75, -10.35]];
 const FLOOR = 0.3, EAVE = 2.95, BASE = -3.4, LOWER = -2.42, GAR = 0.05;
 const inPoly = (x, z, P) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, zi] = P[i], [xj, zj] = P[j];
@@ -596,7 +596,7 @@ solid(house, 2.0, 0.6, 0.45, -5.5, FLOOR + 0.3, 2.35, MAT.cab, { uv: false }); b
 // the family christmas tree
 { const tx = -9.2, tz = 9.4; colOnly(0.8, 2.4, 0.8, tx, FLOOR + 1.2, tz);
   const g = new THREE.Group(); g.position.set(tx, FLOOR, tz); house.add(g);
-  for (let k = 0; k < 4; k++) { const c = new THREE.Mesh(new THREE.ConeGeometry(0.9 - k * 0.2, 0.9, 10), MAT.core); c.position.y = 0.7 + k * 0.45; g.add(c); }
+  for (let k = 0; k < 4; k++) { const c = new THREE.Mesh(new THREE.ConeGeometry(0.9 - k * 0.2, 0.9, 10), (MAT.pine = MAT.pine || std({ color: 0x1f4a25, roughness: 0.9 }))); c.position.y = 0.7 + k * 0.45; g.add(c); }
   const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.14), new THREE.MeshBasicMaterial({ color: 0xffd65a })); star.position.y = 2.35; g.add(star);
   for (let i = 0; i < 5; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.4), std({ color: [0xc0392b, 0x2e86de, 0xf1c40f, 0x27ae60, 0x8e44ad][i] })); b.position.set(Math.cos(i * 1.3) * 0.75, 0.15, Math.sin(i * 1.3) * 0.75); g.add(b); }
   const tl = new THREE.PointLight(0xffb070, 3, 6, 2); tl.position.set(0, 1.3, 0); g.add(tl); }
@@ -694,7 +694,233 @@ const INFL = [inflatable(-12.5, 18.5, 'santa'), inflatable(15.5, 15.5, 'snowman'
 { const x = -3.2, z = 18.4; solid(scene, 0.12, 2.0, 0.12, x, 1.0, z, MAT.darkMetal, { uv: false });
   const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.28, 0.22), new THREE.MeshBasicMaterial({ color: 0xffd9a0 })); bulb.position.set(x, 2.1, z); scene.add(bulb);
   const l = new THREE.PointLight(0xffc27a, 4, 8, 2); l.position.set(x, 2.0, z); scene.add(l); }
-// map edge: a low hedge ring so nobody wanders off
+// ================= map upgrade: ceilings, furnished rooms, a real neighbourhood =================
+const WORLD_ANIM = [];
+const basic = c => new THREE.MeshBasicMaterial({ color: c });
+const glowM = (c, k = 2.5) => { const m = new THREE.MeshBasicMaterial({ color: c }); m.color.multiplyScalar(k); return m; };
+MAT.rug1 = std({ color: 0x7c2f2a, roughness: 1 }); MAT.rug2 = std({ color: 0x2f4a3a, roughness: 1 }); MAT.rug3 = std({ color: 0x3a3f6b, roughness: 1 });
+MAT.ice = std({ color: 0xcfe4f2, roughness: 0.06, metalness: 0.05, envMapIntensity: 1.5 });
+MAT.snow = std({ color: 0xf1f4f9, roughness: 0.9 }); MAT.chrome = std({ color: 0xcfd3d8, roughness: 0.2, metalness: 0.9 });
+MAT.red = std({ color: 0xb3262b, roughness: 0.5 }); MAT.green = std({ color: 0x24683a, roughness: 0.5 }); MAT.black = std({ color: 0x151517, roughness: 0.5 });
+MAT.orange = std({ color: 0xe8701a, roughness: 0.45 }); MAT.yellow = std({ color: 0xe9c02a, roughness: 0.5 }); MAT.blueP = std({ color: 0x2b62b8, roughness: 0.5 });
+MAT.pine = MAT.pine || std({ color: 0x1f4a25, roughness: 0.9 }); MAT.pillow = std({ color: 0xf4f1ea, roughness: 1 }); MAT.blanket = std({ color: 0x3b5f8a, roughness: 1 }); MAT.books = [0x8b2c2c, 0x2c5a8b, 0x3f7a3f, 0xc49a3a, 0x5d3f7a, 0x2b2b2b].map(c => std({ color: c, roughness: 0.8 }));
+const flat = (par, w, d, x, y, z, mat) => { const g = new THREE.PlaneGeometry(w, d); g.rotateX(-Math.PI / 2); g.translate(x, y, z); const m = new THREE.Mesh(g, mat); m.receiveShadow = true; par.add(m); return m; };
+const cyl = (par, r0, r1, h, x, y, z, mat, seg = 12) => { const m = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, seg), mat)); m.position.set(x, y, z); par.add(m); return m; };
+const sph = (par, r, x, y, z, mat) => { const m = shadowed(new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), mat)); m.position.set(x, y, z); par.add(m); return m; };
+function canvasScreen(w, h, draw) { const cv = document.createElement('canvas'); cv.width = 256; cv.height = Math.round(256 * h / w); const x = cv.getContext('2d'); draw(x, cv.width, cv.height);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; const m = new THREE.MeshBasicMaterial({ map: t }); m.color.setScalar(1.6); return m; }
+// screen facing a direction: rotY 0 faces +z
+function screen(par, w, h, x, y, z, rotY, mat) { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); m.position.set(x, y, z); m.rotation.y = rotY; par.add(m); return m; }
+
+// --- ceilings (so first person indoors feels like a room) + a head-bonk collider ---
+function ceil(x0, x1, z0, z1, y, mat = MAT.paint) { const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(Math.PI / 2); g.translate((x0 + x1) / 2, y, (z0 + z1) / 2);
+  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; house.add(m); }
+ceil(-15.75, 4.35, -10.35, 10.43, EAVE - 0.02); addCol(-15.75, EAVE - 0.02, -10.35, 4.35, EAVE + 0.18, 10.43, 'ceil');
+ceil(4.35, 15.75, -10.35, -0.225, EAVE - 0.02, MAT.paint3); addCol(4.35, EAVE - 0.02, -10.35, 15.75, EAVE + 0.18, -0.225, 'ceil');
+ceil(-15.75, -1, -10.35, 2, FLOOR - 0.26, MAT.paint2);
+const ceilLamp = glowM(0xfff1d8, 2.2);
+for (const [x, y, z] of [[-4, EAVE, 6], [0, EAVE, -5], [-12, EAVE, -4], [-13, EAVE, 4.8], [10, EAVE, -5], [-8, FLOOR - 0.25, -5], [-3, FLOOR - 0.25, -1], [1.5, EAVE, 6.5], [-8, EAVE, -8]]) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.05, 20), ceilLamp); m.position.set(x, y - 0.045, z); house.add(m); }
+
+// --- living room: fireplace, rug, bookshelf, art, TV yule log ---
+flat(house, 3.4, 2.6, -5.5, FLOOR + 0.006, 6.4, MAT.rug1);
+{ const fx0 = 2.9, fz = 2.06; solid(house, 1.9, EAVE - FLOOR, 0.45, fx0, (EAVE + FLOOR) / 2, fz + 0.225, MAT.lime);
+  box(house, 2.4, 0.1, 0.62, fx0, FLOOR + 1.18, fz + 0.31, MAT.cab, { uv: false });
+  box(house, 2.4, 0.14, 0.9, fx0, FLOOR + 0.07, fz + 0.45, MAT.lime);
+  box(house, 0.95, 0.72, 0.04, fx0, FLOOR + 0.5, fz + 0.455, MAT.black, { uv: false });
+  const flames = []; for (let i = 0; i < 5; i++) { const f = new THREE.Mesh(new THREE.ConeGeometry(0.09 + rand() * 0.05, 0.35, 8), glowM(i % 2 ? 0xff8a22 : 0xffc040, 3)); f.userData.keep = true; f.position.set(fx0 - 0.3 + i * 0.15, FLOOR + 0.35, fz + 0.36); house.add(f); flames.push(f); }
+  for (let i = 0; i < 3; i++) { const l = cyl(house, 0.06, 0.06, 0.7, fx0, FLOOR + 0.2, fz + 0.38 + (i - 1) * 0.03, MAT.bark, 8); l.rotation.z = Math.PI / 2 + (i - 1) * 0.3; }
+  const fl = new THREE.PointLight(0xff8a3a, 4, 7, 2); fl.position.set(fx0, FLOOR + 0.6, fz + 0.9); scene.add(fl);
+  WORLD_ANIM.push(t => { const k = 0.75 + Math.sin(t * 11) * 0.12 + Math.sin(t * 23.7) * 0.08 + Math.sin(t * 5.3) * 0.08; fl.intensity = 4 * k; flames.forEach((f, i) => f.scale.set(1, 0.7 + 0.4 * Math.abs(Math.sin(t * (7 + i * 1.7) + i)), 1)); });
+  [MAT.red, MAT.green, MAT.white, MAT.red].forEach((m, i) => { const x = fx0 - 0.8 + i * 0.53; box(house, 0.18, 0.34, 0.06, x, FLOOR + 0.95, fz + 0.64, m, { uv: false }); box(house, 0.2, 0.07, 0.07, x, FLOOR + 1.1, fz + 0.64, MAT.white, { uv: false }); box(house, 0.14, 0.1, 0.06, x + 0.08, FLOOR + 0.8, fz + 0.64, m, { uv: false }); });
+  // garland on the mantel
+  for (let i = 0; i < 18; i++) { const x = fx0 - 1.1 + i * 0.13; sph(house, 0.07, x, FLOOR + 1.26, fz + 0.45, MAT.pine).scale.y = 0.7; if (i % 3 === 1) sph(house, 0.03, x, FLOOR + 1.3, fz + 0.52, [MAT.red, MAT.yellow, MAT.blueP][i % 3]); } }
+{ const bx = -10.17, bz = 3.1; solid(house, 0.38, 2.1, 1.5, bx, FLOOR + 1.05, bz, MAT.cab, { uv: false });
+  for (let s = 0; s < 4; s++) { let z = bz - 0.68; while (z < bz + 0.66) { const w = 0.05 + rand() * 0.05, h = 0.26 + rand() * 0.12; box(house, 0.26, h, w, bx + 0.08, FLOOR + 0.18 + s * 0.5 + h / 2, z + w / 2, MAT.books[Math.floor(rand() * 6)], { uv: false }); z += w + 0.01; } } }
+const ART = [['#e85d4a', '#f6c445'], ['#3b7dd8', '#9be0f0'], ['#2f8f5b', '#e8e3c8'], ['#6c3fa0', '#ff9ec7']].map(([a, b]) => canvasScreen(1, 0.75, (x, W, H) => {
+  x.fillStyle = b; x.fillRect(0, 0, W, H); x.fillStyle = a; for (let i = 0; i < 5; i++) { x.beginPath(); x.arc(Math.random() * W, Math.random() * H, 20 + Math.random() * 50, 0, 7); x.fill(); x.globalAlpha = 0.7; } x.globalAlpha = 1; }));
+ART.forEach(m => m.color.setScalar(0.85));
+function art(x, y, z, rotY, i, w = 0.9, h = 0.65) { const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = rotY; house.add(g); box(g, w + 0.08, h + 0.08, 0.04, 0, 0, 0, MAT.black, { uv: false }); screen(g, w, h, 0, 0, 0.022, 0, ART[i % ART.length]); }
+art(-3.3, FLOOR + 1.6, 2.07, 0, 0); art(-9.6, FLOOR + 1.6, 2.07, 0, 1, 0.7, 0.9); art(-4.84, FLOOR + 1.55, -6, Math.PI / 2, 2); art(-15.6, FLOOR + 1.6, 1.0, Math.PI / 2, 3); art(-11.6, FLOOR + 1.6, 7.38, Math.PI, 0, 0.8, 0.6);
+const YULE = canvasScreen(1.6, 0.9, (x, W, H) => { const g = x.createLinearGradient(0, H, 0, 0); g.addColorStop(0, '#2a0d02'); g.addColorStop(0.45, '#ff7a1a'); g.addColorStop(0.8, '#3a1306'); g.addColorStop(1, '#100503'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  x.fillStyle = '#4a2a17'; x.fillRect(W * 0.15, H * 0.72, W * 0.7, H * 0.12); x.fillStyle = '#fff'; x.font = '800 14px Inter,sans-serif'; x.fillText('🔥 YULE LOG 24/7', 8, 18); });
+screen(house, 1.52, 0.84, -5.5, FLOOR + 1.1, 2.335, 0, YULE);
+{ cyl(house, 0.2, 0.2, 0.55, -7.2, FLOOR + 0.275, 7.6, MAT.cab, 14); cyl(house, 0.03, 0.03, 0.4, -7.2, FLOOR + 0.75, 7.6, MAT.chrome, 8); cyl(house, 0.14, 0.2, 0.22, -7.2, FLOOR + 1.0, 7.6, glowM(0xffe2b0, 1.4), 14); colOnly(0.4, 0.6, 0.4, -7.2, FLOOR + 0.3, 7.6); }
+// armchair by the tree
+{ const g = new THREE.Group(); g.position.set(-8.5, FLOOR, 5.6); g.rotation.y = 0.6; house.add(g); box(g, 0.95, 0.42, 0.9, 0, 0.21, 0, MAT.fabric2, { uv: false }); box(g, 0.95, 0.5, 0.2, 0, 0.62, -0.35, MAT.fabric2, { uv: false });
+  for (const s of [-1, 1]) box(g, 0.18, 0.28, 0.9, s * 0.4, 0.55, 0, MAT.fabric2, { uv: false }); colOnly(1.0, 0.8, 1.0, -8.5, FLOOR + 0.4, 5.6); }
+
+// --- kitchen + dining: upper cabinets, stools, chairs, pendants ---
+for (const [a, b] of [[-4.6, -2.25], [-0.75, 3.2]]) { box(house, b - a, 0.72, 0.36, (a + b) / 2, FLOOR + 1.95, -10.12, MAT.cab, { uv: false }); }
+box(house, 0.8, 0.5, 0.5, 2.0, FLOOR + 2.25, -10.0, MAT.chrome, { uv: false }); box(house, 0.75, 0.04, 0.6, 2.0, FLOOR + 1.0, -9.85, MAT.black, { uv: false });
+cyl(house, 0.15, 0.13, 0.18, 1.8, FLOOR + 1.1, -9.8, MAT.red, 14);
+for (let i = 0; i < 3; i++) { const x = -2.0 + i; cyl(house, 0.17, 0.17, 0.06, x, FLOOR + 0.72, -4.25, MAT.black, 14); cyl(house, 0.03, 0.03, 0.7, x, FLOOR + 0.35, -4.25, MAT.chrome, 8); colOnly(0.34, 0.75, 0.34, x, FLOOR + 0.37, -4.25);
+  box(house, 0.015, 0.9, 0.015, x, EAVE - 0.47, -5.2, MAT.black, { uv: false }); cyl(house, 0.06, 0.16, 0.2, x, EAVE - 1.0, -5.2, MAT.black, 14); sph(house, 0.06, x, EAVE - 1.1, -5.2, glowM(0xffe8c0, 2)); }
+{ const bowl = cyl(house, 0.2, 0.12, 0.1, -0.6, FLOOR + 1.04, -5.2, MAT.white, 16); [MAT.red, MAT.orange, MAT.yellow, MAT.green].forEach((m, i) => sph(house, 0.06, -0.6 + Math.cos(i * 1.6) * 0.08, FLOOR + 1.12, -5.2 + Math.sin(i * 1.6) * 0.08, m)); }
+for (const [x, z, r] of [[-1.5, -1.45, 0], [-0.5, -1.45, 0], [-1.5, 0.25, Math.PI], [-0.5, 0.25, Math.PI]]) { const g = new THREE.Group(); g.position.set(x, FLOOR, z); g.rotation.y = r; house.add(g);
+  box(g, 0.44, 0.05, 0.44, 0, 0.46, 0, MAT.cab, { uv: false }); box(g, 0.44, 0.5, 0.05, 0, 0.72, -0.2, MAT.cab, { uv: false }); for (const [a, b] of [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]]) box(g, 0.04, 0.46, 0.04, a, 0.23, b, MAT.cab, { uv: false });
+  colOnly(0.45, 0.95, 0.45, x, FLOOR + 0.47, z); }
+{ const g = new THREE.Group(); g.position.set(-1, FLOOR + 0.78, -0.6); house.add(g); cyl(g, 0.12, 0.08, 0.08, 0, 0, 0, MAT.white, 14); for (let i = 0; i < 4; i++) cyl(g, 0.15, 0.15, 0.015, -0.6 + (i % 2) * 1.2, 0, -0.3 + Math.floor(i / 2) * 0.6, MAT.white, 18); }
+
+// --- den: gaming desk, bean bags, rug ---
+flat(house, 3.0, 2.2, -12.6, FLOOR + 0.006, -4.0, MAT.rug3);
+{ box(house, 0.9, 0.5, 0.05, -12.0, FLOOR + 1.08, -9.1, MAT.black, { uv: false });
+  screen(house, 0.84, 0.44, -12.0, FLOOR + 1.08, -9.07, 0, canvasScreen(0.84, 0.44, (x, W, H) => { const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#152a5c'); g.addColorStop(1, '#5a1f6b'); x.fillStyle = g; x.fillRect(0, 0, W, H); x.fillStyle = '#ffcf4d'; x.font = '900 22px Inter,sans-serif'; x.fillText('VICTORY ROYALE?', 18, H / 2 + 8); }));
+  box(house, 0.08, 0.3, 0.08, -12.0, FLOOR + 0.9, -9.1, MAT.black, { uv: false });
+  const ch = new THREE.Group(); ch.position.set(-12.0, FLOOR, -8.0); house.add(ch); box(ch, 0.55, 0.1, 0.55, 0, 0.48, 0, MAT.red, { uv: false }); box(ch, 0.5, 0.75, 0.1, 0, 0.9, 0.26, MAT.red, { uv: false }); cyl(ch, 0.03, 0.03, 0.45, 0, 0.22, 0, MAT.chrome, 8); colOnly(0.55, 0.9, 0.55, -12.0, FLOOR + 0.45, -8.0); }
+for (const [x, z, m] of [[-9.2, -2.2, MAT.orange], [-8.4, -3.4, MAT.blueP]]) { const b = sph(house, 0.5, x, FLOOR + 0.32, z, m); b.scale.set(1, 0.65, 1); colOnly(0.8, 0.6, 0.8, x, FLOOR + 0.3, z); }
+
+// --- bedroom: nightstand + lamp, pillows, blanket, rug ---
+flat(house, 2.4, 1.6, -13.2, FLOOR + 0.006, 6.6, MAT.rug2);
+box(house, 1.9, 0.08, 1.5, -14.4, FLOOR + 0.6, 5.05, MAT.blanket, { uv: false }); for (const x of [-14.9, -13.9]) box(house, 0.7, 0.14, 0.4, x, FLOOR + 0.63, 3.75, MAT.pillow, { uv: false });
+solid(house, 0.5, 0.55, 0.45, -12.95, FLOOR + 0.28, 3.75, MAT.cab, { uv: false }); cyl(house, 0.12, 0.17, 0.25, -12.95, FLOOR + 0.82, 3.75, glowM(0xffd8a0, 1.5), 14);
+{ const b = sph(house, 0.16, -13.6, FLOOR + 0.78, 3.95, std({ color: 0x9a6a3e, roughness: 1 })); sph(house, 0.11, -13.6, FLOOR + 1.0, 3.95, b.material); }
+box(house, 0.06, 2.1, 1.8, -15.68, FLOOR + 1.05, 6.4, MAT.cab, { uv: false });
+
+// --- garage: pegboard, totes, ladder, fluorescent tubes, snowblower ---
+box(house, 3.0, 1.0, 0.04, 12.5, GAR + 1.75, -10.15, MAT.cab, { uv: false });
+for (let i = 0; i < 9; i++) box(house, 0.05, 0.25 + (i % 3) * 0.1, 0.04, 11.2 + i * 0.32, GAR + 1.7, -10.1, i % 2 ? MAT.red : MAT.chrome, { uv: false });
+for (const [x, z, n] of [[14.9, -2.0, 3], [14.0, -2.0, 2], [9.9, -9.4, 2]]) for (let k = 0; k < n; k++) solid(house, 0.8, 0.45, 0.55, x, GAR + 0.23 + k * 0.46, z, k % 2 ? MAT.green : MAT.red, { uv: false });
+solid(house, 0.75, 0.75, 1.0, 10.4, GAR + 0.38, -3.0, MAT.orange, { uv: false }); box(house, 0.06, 0.8, 0.06, 10.4, GAR + 1.0, -2.45, MAT.black, { uv: false });
+for (const x of [7.2, 12.5]) box(house, 1.3, 0.06, 0.14, x, EAVE - 0.06, -5, ceilLamp, { uv: false });
+
+// --- basement: TV + sectional, arcade cabinets, ping-pong, columns, string lights ---
+flat(house, 3.2, 2.8, -3.4, LOWER + 0.006, -0.4, MAT.rug1);
+box(house, 0.06, 0.95, 1.7, -1.1, LOWER + 1.35, -0.4, MAT.black, { uv: false });
+screen(house, 1.6, 0.86, -1.14, LOWER + 1.35, -0.4, -Math.PI / 2, canvasScreen(1.6, 0.86, (x, W, H) => { x.fillStyle = '#0d3b1f'; x.fillRect(0, 0, W, H); x.fillStyle = '#f4f4f4';
+  for (let i = 0; i < 40; i++) x.fillRect(Math.random() * W, Math.random() * H, 2, 2); x.fillStyle = '#ffcf4d'; x.font = '900 20px Inter,sans-serif'; x.fillText('HOLIDAY HAVOC', 50, H / 2); x.font = '600 11px Inter,sans-serif'; x.fillText('PRESS START', 92, H / 2 + 20); }));
+function sofaAt(x, y, z, rot, mat) { const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = rot; house.add(g);
+  box(g, 2.2, 0.45, 0.9, 0, 0.22, 0, mat, { uv: false }); box(g, 2.2, 0.5, 0.22, 0, 0.6, -0.34, mat, { uv: false }); for (const s of [-1, 1]) box(g, 0.22, 0.3, 0.9, s * 1.0, 0.55, 0, mat, { uv: false });
+  const sw = Math.abs(Math.sin(rot)) < 0.5; colOnly(sw ? 2.2 : 0.9, 0.85, sw ? 0.9 : 2.2, x, y + 0.42, z); }
+sofaAt(-4.2, LOWER, -0.4, Math.PI / 2, MAT.fabric2);
+const ARC = ['#ff3d6e', '#3dd6ff'].map((c, i) => canvasScreen(0.5, 0.42, (x, W, H) => { x.fillStyle = '#05060a'; x.fillRect(0, 0, W, H); x.fillStyle = c;
+  for (let k = 0; k < 6; k++) x.fillRect(20 + k * 36, 30 + (k % 2) * 20, 24, 18); x.fillStyle = '#ffd34d'; x.fillRect(W / 2 - 10, H - 50, 20, 20); x.fillStyle = '#fff'; x.font = '900 18px Inter'; x.fillText(i ? 'SNOW RAIDERS' : 'ELF-MAN', 30, 22); }));
+[[-9.2, 0], [-8.2, 1]].forEach(([x, i]) => { const z = -9.95; solid(house, 0.75, 1.85, 0.7, x, LOWER + 0.93, z, i ? MAT.blueP : MAT.red, { uv: false });
+  screen(house, 0.52, 0.44, x, LOWER + 1.3, z + 0.36, 0, ARC[i]); box(house, 0.74, 0.2, 0.3, x, LOWER + 0.98, z + 0.45, MAT.black, { uv: false }); screen(house, 0.7, 0.16, x, LOWER + 1.72, z + 0.36, 0, glowM(i ? 0x3dd6ff : 0xff3d6e, 1.6)); });
+{ const px = -9.0, pz = -0.4; solid(house, 1.5, 0.06, 2.7, px, LOWER + 0.76, pz, MAT.green, { uv: false }); box(house, 1.52, 0.16, 0.02, px, LOWER + 0.86, pz, MAT.white, { uv: false });
+  for (const [a, b] of [[-0.65, -1.2], [0.65, -1.2], [-0.65, 1.2], [0.65, 1.2]]) box(house, 0.06, 0.73, 0.06, px + a, LOWER + 0.37, pz + b, MAT.black, { uv: false }); colOnly(1.5, 0.8, 2.7, px, LOWER + 0.4, pz); }
+for (const [x, z] of [[-8.2, -6.6], [-4.0, -5.0]]) solid(house, 0.14, FLOOR - 0.25 - LOWER, 0.14, x, (FLOOR - 0.25 + LOWER) / 2, z, MAT.darkMetal, { uv: false });
+solid(house, 0.6, 0.85, 0.6, -1.5, LOWER + 0.43, -9.8, MAT.white, { uv: false });
+{ const cols = [0xff2020, 0x1fe03a, 0x2357ff, 0xffaa00, 0xff38c0].map(c => glowM(c, 3)), g = new THREE.SphereGeometry(0.035, 8, 6);
+  for (let k = 0; k < 4; k++) for (let i = 0; i <= 26; i++) { const x = -15.2 + i * 0.52, z = -9.5 + k * 3.0, y = FLOOR - 0.32 - Math.abs(Math.sin(i * 0.6)) * 0.18;
+    if (x > -6.7 && x < -5.0 && z > -3.7) continue; const m = new THREE.Mesh(g, cols[(i + k) % 5]); m.position.set(x, y, z); house.add(m); } }
+for (let i = 0; i < 6; i++) solid(house, 0.4, 0.3, 0.4, -14.6 + (i % 3) * 0.5, LOWER + 0.15 + Math.floor(i / 3) * 0.3, -9.6, [MAT.red, MAT.green, MAT.blueP][i % 3], { uv: false });
+
+// ---------- outside: neighbours across the street, sidewalk, streetlights, parked cars ----------
+const NB = [{ x: -27, z: 44, w: 13, d: 9, col: 0x8a9aa6, lit: ['#ffb057'] }, { x: 1, z: 45, w: 12, d: 10, col: 0xc9b48a, lit: ['#ff2020', '#1fe03a', '#2357ff', '#ffaa00'] }, { x: 28, z: 44, w: 12, d: 9, col: 0x6f7f62, lit: ['#d6e6ff', '#1a46ff'] }];
+const NB_BULBS = [];
+NB.forEach((h, hi) => { const gy = lotY(h.x, h.z), sid = std({ ...T_SIDING, color: h.col, roughness: 0.75 }), x0 = h.x - h.w / 2, x1 = h.x + h.w / 2, zf = h.z - h.d / 2;
+  solid(scene, h.w, 3.2 + 1, h.d, h.x, gy + 1.1, h.z, sid);
+  const r = gableRoof(scene, { x0, x1, zc: h.z, run: h.d / 2, eaveY: gy + 3.2, rise: 2.3, ov: 0.45, wallMat: sid }); colOnly(h.w + 0.9, 2.4, h.d + 0.9, h.x, gy + 4.3, h.z);
+  makeWindow(scene, 1.1, 1.3, h.x - h.w / 2 + 2.0, gy + 1.7, zf - 0.02, Math.PI); makeWindow(scene, 1.1, 1.3, h.x + 1.5, gy + 1.7, zf - 0.02, Math.PI); makeWindow(scene, 1.1, 1.3, h.x + h.w / 2 - 1.6, gy + 1.7, zf - 0.02, Math.PI);
+  box(scene, 1.0, 2.1, 0.1, h.x - 1.2, gy + 1.05, zf - 0.05, [MAT.red, MAT.green, MAT.blueP][hi], { uv: false }); sph(scene, 0.05, h.x - 0.85, gy + 1.0, zf - 0.12, MAT.chrome);
+  // wreath
+  { const w = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.08, 8, 20), MAT.pine); w.position.set(h.x - 1.2, gy + 1.6, zf - 0.13); scene.add(w); sph(scene, 0.06, h.x - 1.2, gy + 1.38, zf - 0.17, MAT.red); }
+  flatShape([[h.x + 2.2, zf], [h.x + 5.0, zf], [h.x + 5.0, 33.2], [h.x + 2.2, 33.2]], 0.035, MAT.conc);
+  for (let x = r.x0e; x <= r.x1e; x += 0.32) NB_BULBS.push([V(x, r.edgeY - 0.06, r.zBack - 0.18), h.lit[NB_BULBS.length % h.lit.length]]);
+  for (let x = r.x0e; x <= r.x1e; x += 0.32) NB_BULBS.push([V(x, r.edgeY - 0.06, r.zFront + 0.18), h.lit[NB_BULBS.length % h.lit.length]]);
+  // mailbox
+  cyl(scene, 0.04, 0.04, 1.1, h.x + 6, gy + 0.55, 33.6, MAT.darkMetal, 6); box(scene, 0.25, 0.25, 0.45, h.x + 6, gy + 1.15, 33.6, MAT.black, { uv: false }); });
+groundBand(-57, 57, 33.1, 34.7, 0.05, MAT.conc);
+for (const x of [-38, -14, 12, 36]) { const z = 34.2; cyl(scene, 0.07, 0.1, 5, x, 2.5, z, MAT.darkMetal, 8); box(scene, 0.1, 0.08, 1.2, x, 4.95, z - 0.55, MAT.darkMetal, { uv: false });
+  box(scene, 0.35, 0.1, 0.5, x, 4.9, z - 1.1, glowM(0xffd9a0, 3), { uv: false }); colOnly(0.2, 5, 0.2, x, 2.5, z); }
+MAT.carGreen = std({ color: 0x2e5e3a, roughness: 0.25, metalness: 0.5 }); MAT.carWhite = std({ color: 0xdcdcdc, roughness: 0.25, metalness: 0.5 });
+for (const [x, z, m] of [[-20, 31.6, MAT.carGreen], [22, 31.6, MAT.carWhite], [-34, 26.2, MAT.carRed]]) { car(x, z, Math.PI / 2, m); colOnly(4.9, 1.0, 2.3, x, 0.5, z); colOnly(2.6, 0.6, 1.8, x, 1.2, z); }
+{ const x = 11.5, z = 24.4; cyl(scene, 0.04, 0.04, 1.1, x, 0.55, z, MAT.darkMetal, 6); box(scene, 0.25, 0.25, 0.45, x, 1.15, z, MAT.red, { uv: false }); }
+
+// ---------- back yard: fence, ice rink, tree fort, shed, fire pit ----------
+function fenceRun(ax, az, bx, bz, gaps = []) { const L = Math.hypot(bx - ax, bz - az), n = Math.ceil(L / 2.4), dx = (bx - ax) / L, dz = (bz - az) / L;
+  for (let i = 0; i < n; i++) { const t0 = i * L / n, t1 = (i + 1) * L / n, tc = (t0 + t1) / 2; if (gaps.some(g => Math.abs(g - tc) < 1.3)) continue;
+    const x = ax + dx * tc, z = az + dz * tc, gy = lotY(x, z), len = t1 - t0, along = Math.abs(dx) > 0.5;
+    solid(scene, along ? len : 0.08, 1.9, along ? 0.08 : len, x, gy + 0.85, z, MAT.fence);
+    box(scene, 0.12, 2.0, 0.12, ax + dx * t1, gy + 0.9, az + dz * t1, MAT.railWood, { uv: false }); } }
+fenceRun(-30, -28, 26, -28, [8, 34]); fenceRun(26, -28, 26, -13, [7]); fenceRun(-30, -28, -30, -8, [10]);
+// ice rink: slippery!
+const RINK = { x0: -10.5, x1: -0.5, z0: -24.5, z1: -18.0 }; RINK.y = lotY(-5, -21) + 0.12;
+solid(scene, RINK.x1 - RINK.x0, 0.18, RINK.z1 - RINK.z0, (RINK.x0 + RINK.x1) / 2, RINK.y - 0.09, (RINK.z0 + RINK.z1) / 2, MAT.ice);
+for (const [x0, z0, x1, z1] of [[RINK.x0, RINK.z0, RINK.x1, RINK.z0], [RINK.x0, RINK.z1, RINK.x1, RINK.z1], [RINK.x0, RINK.z0, RINK.x0, RINK.z1], [RINK.x1, RINK.z0, RINK.x1, RINK.z1]]) {
+  const along = z0 === z1, L = along ? x1 - x0 : z1 - z0, n = 4; for (let i = 0; i < n; i++) { if ((along && i === 1) || (!along && i === 2)) continue;
+    const c0 = (along ? x0 : z0) + L * i / n, c1 = c0 + L / n, c = (c0 + c1) / 2; if (along) { solid(scene, L / n - 0.05, 0.55, 0.1, c, RINK.y + 0.27, z0, MAT.white); box(scene, L / n - 0.05, 0.06, 0.12, c, RINK.y + 0.52, z0, MAT.red, { uv: false }); }
+    else { solid(scene, 0.1, 0.55, L / n - 0.05, x0, RINK.y + 0.27, c, MAT.white); box(scene, 0.12, 0.06, L / n - 0.05, x0, RINK.y + 0.52, c, MAT.red, { uv: false }); } } }
+for (const x of [RINK.x0 + 0.9, RINK.x1 - 0.9]) { const s = x < -5 ? 1 : -1; for (const z of [-0.6, 0.6]) box(scene, 0.06, 1.1, 0.06, x, RINK.y + 0.55, -21.25 + z, MAT.red, { uv: false });
+  box(scene, 0.06, 0.06, 1.26, x, RINK.y + 1.1, -21.25, MAT.red, { uv: false }); box(scene, 0.7, 0.06, 0.06, x - s * 0.35, RINK.y + 0.03, -21.85, MAT.red, { uv: false }); colOnly(0.7, 1.1, 1.3, x - s * 0.3, RINK.y + 0.55, -21.25); }
+const onIce = e => e.pos.x > RINK.x0 && e.pos.x < RINK.x1 && e.pos.z > RINK.z0 && e.pos.z < RINK.z1 && Math.abs(e.pos.y - RINK.y) < 0.15;
+// tree fort with stairs, half walls and a slide
+const FORT = { x: 14, z: -21, s: 3.4 }; FORT.gy = lotY(FORT.x, FORT.z); FORT.y = FORT.gy + 2.4;
+{ const { x, z, s, y } = FORT, h = s / 2;
+  for (const a of [-1, 1]) for (const b of [-1, 1]) solid(scene, 0.22, y - FORT.gy + 2.2, 0.22, x + a * (h - 0.11), (FORT.gy + y + 2.2) / 2, z + b * (h - 0.11), MAT.bark, { uv: false });
+  solid(scene, s, 0.2, s, x, y - 0.1, z, MAT.deckWood);
+  solid(scene, s, 1.0, 0.1, x, y + 0.5, z + h - 0.05, MAT.deckWood); solid(scene, 0.1, 1.0, s, x + h - 0.05, y + 0.5, z, MAT.deckWood);
+  solid(scene, 1.0, 1.0, 0.1, x - h + 0.5, y + 0.5, z - h + 0.05, MAT.deckWood); solid(scene, 1.0, 1.0, 0.1, x + h - 0.5, y + 0.5, z - h + 0.05, MAT.deckWood);
+  solid(scene, 0.1, 1.0, s - 1.3, x - h + 0.05, y + 0.5, z + 0.65, MAT.deckWood);
+  gableRoof(scene, { x0: x - h, x1: x + h, zc: z, run: h, eaveY: y + 2.2, rise: 1.1, ov: 0.3, wallMat: MAT.deckWood }); colOnly(s + 0.6, 0.3, s + 0.6, x, y + 2.35, z);
+  // stairs down toward the house (-x side, near the -z corner)
+  const n = 10, rise = (y - FORT.gy) / n, run = 0.36, sz = z - h + 0.65;
+  for (let i = 0; i < n; i++) { const top = y - (i + 1) * rise + rise, x1 = x - h - i * run; solid(scene, run, top - FORT.gy + 0.2, 1.1, x1 - run / 2, (top + FORT.gy - 0.2) / 2, sz, MAT.deckWood, { uv: false }); }
+  // slide off the +z side
+  const sl = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 3.6), MAT.yellow)); sl.position.set(x - 0.6, (y + FORT.gy) / 2 + 0.1, z - h - 1.45); sl.rotation.x = -Math.atan2(y - FORT.gy, 3.2); scene.add(sl);
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.5), new THREE.MeshStandardMaterial({ color: 0xd42a2a, side: THREE.DoubleSide })); flag.position.set(x + h + 0.4, y + 3.9, z); scene.add(flag);
+  cyl(scene, 0.03, 0.03, 1.6, x + h, y + 3.6, z, MAT.chrome, 6); WORLD_ANIM.push(t => { flag.rotation.y = Math.sin(t * 2.3) * 0.25; }); }
+// shed
+{ const x = -22, z = -19, w = 4.2, d = 3.2, gy = lotY(x, z), H = 2.4, sid = std({ ...T_SIDING, color: 0x8b2e25, roughness: 0.8 });
+  solid(scene, w, 0.15, d, x, gy + 0.075, z, MAT.deckWood);
+  solid(scene, w, H, 0.12, x, gy + H / 2, z - d / 2 + 0.06, sid); solid(scene, 0.12, H, d, x - w / 2 + 0.06, gy + H / 2, z, sid);
+  solid(scene, w, H, 0.12, x, gy + H / 2, z + d / 2 - 0.06, sid);
+  solid(scene, 0.12, H, (d - 1.3) / 2, x + w / 2 - 0.06, gy + H / 2, z - d / 2 + (d - 1.3) / 4, sid); solid(scene, 0.12, H, (d - 1.3) / 2, x + w / 2 - 0.06, gy + H / 2, z + d / 2 - (d - 1.3) / 4, sid);
+  solid(scene, 0.12, H - 2.0, 1.3, x + w / 2 - 0.06, gy + 2.0 + (H - 2.0) / 2, z, sid);
+  gableRoof(scene, { x0: x - w / 2, x1: x + w / 2, zc: z, run: d / 2, eaveY: gy + H, rise: 1.0, ov: 0.3, wallMat: sid }); colOnly(w, 0.2, d, x, gy + H + 0.1, z);
+  makeWindow(scene, 0.7, 0.6, x, gy + 1.6, z + d / 2, 0);
+  solid(scene, 0.5, 1.6, 2.4, x - w / 2 + 0.4, gy + 0.8, z, MAT.cab, { uv: false }); solid(scene, 0.9, 0.5, 0.6, x + 0.3, gy + 0.4, z - 0.9, MAT.green, { uv: false });
+}
+// fire pit with log benches
+{ const x = 5.5, z = -24.5, gy = lotY(x, z); for (let i = 0; i < 12; i++) { const a = i / 12 * 6.28, b = new THREE.Mesh(rockGeo, MAT.rock); b.position.set(x + Math.cos(a) * 0.75, gy + 0.12, z + Math.sin(a) * 0.75); b.scale.setScalar(0.22); scene.add(shadowed(b)); }
+  colOnly(1.6, 0.3, 1.6, x, gy + 0.15, z);
+  const flames = []; for (let i = 0; i < 5; i++) { const f = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.6, 8), glowM(i % 2 ? 0xff8a22 : 0xffc040, 3)); f.position.set(x + Math.cos(i * 1.3) * 0.18, gy + 0.35, z + Math.sin(i * 1.3) * 0.18); scene.add(f); flames.push(f); }
+  const fl = new THREE.PointLight(0xff8a3a, 6, 10, 2); fl.position.set(x, gy + 0.9, z); scene.add(fl);
+  WORLD_ANIM.push(t => { fl.intensity = 6 * (0.75 + Math.sin(t * 9) * 0.12 + Math.sin(t * 21) * 0.1); flames.forEach((f, i) => f.scale.set(1, 0.6 + 0.5 * Math.abs(Math.sin(t * (6 + i * 1.9) + i)), 1)); });
+  for (const a of [0.3, 2.4, 4.4]) { const lx = x + Math.cos(a) * 2.1, lz = z + Math.sin(a) * 2.1, l = cyl(scene, 0.22, 0.22, 1.8, lx, gy + 0.22, lz, MAT.bark, 10); l.rotation.z = Math.PI / 2; l.rotation.y = -a + Math.PI / 2;
+    colOnly(0.9, 0.45, 0.9, lx, gy + 0.22, lz); } }
+
+// ---------- snow forts + snowmen (cover) ----------
+function snowWall(x, z, len, rot, h = 1.0) { const n = Math.max(2, Math.round(len / 0.7)), c = Math.cos(rot), s = Math.sin(rot);
+  for (let i = 0; i < n; i++) { const t = (i + 0.5) / n * len - len / 2, px = x + c * t, pz = z - s * t, gy = lotY(px, pz);
+    for (let k = 0; k < Math.round(h / 0.45); k++) { const b = box(scene, 0.68, 0.44, 0.6, 0, 0, 0, MAT.snow, { uv: false }); b.position.set(px + (k % 2) * c * 0.2, gy + 0.22 + k * 0.45, pz - (k % 2) * s * 0.2); b.rotation.y = rot + R(-0.06, 0.06); }
+    colOnly(Math.abs(c) * 0.7 + Math.abs(s) * 0.6, h, Math.abs(s) * 0.7 + Math.abs(c) * 0.6, px, gy + h / 2, pz); } }
+snowWall(-4, 21.5, 4.2, 0); snowWall(-6.4, 20.2, 2.4, Math.PI / 2); snowWall(-1.6, 20.2, 2.4, Math.PI / 2);
+snowWall(21, 12, 3.5, Math.PI / 2); snowWall(22.6, 13.6, 2.6, 0);
+snowWall(-16, -23.5, 4, 0); snowWall(-13.5, -22, 2.5, Math.PI / 2);
+snowWall(20, -23, 3.5, 0.4, 1.4);
+function snowman(x, z, s = 1) { const gy = lotY(x, z); sph(scene, 0.55 * s, x, gy + 0.45 * s, z, MAT.snow); sph(scene, 0.4 * s, x, gy + 1.1 * s, z, MAT.snow); sph(scene, 0.28 * s, x, gy + 1.6 * s, z, MAT.snow);
+  const n = cyl(scene, 0.0, 0.05 * s, 0.25 * s, x, gy + 1.6 * s, z + 0.33 * s, MAT.orange, 8); n.rotation.x = Math.PI / 2;
+  cyl(scene, 0.18 * s, 0.18 * s, 0.3 * s, x, gy + 1.95 * s, z, MAT.black, 12); cyl(scene, 0.28 * s, 0.28 * s, 0.03 * s, x, gy + 1.8 * s, z, MAT.black, 14);
+  colOnly(1.0 * s, 1.9 * s, 1.0 * s, x, gy + 0.95 * s, z); }
+snowman(-9.5, 23, 1); snowman(23, -16, 1.1); snowman(-24, 14, 0.9); snowman(-14, 12.6, 0.8);
+// snow piles along the driveway + road (plowed)
+for (const [x, z, s] of [[14.5, 24, 1.2], [-6, 24.4, 1.0], [16.5, 23.4, 0.8], [-20, 24.2, 1.1], [26, 24.3, 1.0], [-30, 24.3, 0.9], [8, 34.9, 0.9], [-12, 35, 1.0]]) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 8, 0, 6.29, 0, 1.57), MAT.snow); m.position.set(x, lotY(x, z) - 0.05, z); m.scale.set(1.6 * s, 0.55 * s, 0.8 * s); scene.add(shadowed(m)); colOnly(2.6 * s, 0.5 * s, 1.2 * s, x, lotY(x, z) + 0.2 * s, z); }
+
+// ---------- merge static decor into a few draw calls (big win in first person) ----------
+function mergeStatic(par) { const groups = new Map(), drop = []; par.updateMatrixWorld(true);
+  par.traverse(o => { if (!o.isMesh || o.isInstancedMesh || o.userData.keep || !o.geometry.attributes.uv || !o.geometry.attributes.normal) return;
+    let p = o.parent; while (p && p !== par) { if (p.userData.keep) return; p = p.parent; }
+    const mat = o.material; if (Array.isArray(mat) || mat.transparent) return;
+    const key = mat.uuid + (o.castShadow ? 's' : '') + (o.receiveShadow ? 'r' : ''); if (!groups.has(key)) groups.set(key, { mat, cs: o.castShadow, rs: o.receiveShadow, geos: [] });
+    const g = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+    g.applyMatrix4(o.matrixWorld); groups.get(key).geos.push(g); drop.push(o); });
+  drop.forEach(o => o.parent.remove(o));
+  groups.forEach(({ mat, cs, rs, geos }) => { const g = mergeGeometries(geos); if (!g) return; const m = new THREE.Mesh(g, mat); m.castShadow = cs; m.receiveShadow = rs; scene.add(m); }); }
+
+porchG.userData.keep = true; mergeStatic(house);
+// falling snow around the camera (hidden indoors)
+{ const N = window.__LOWQ ? 800 : 2600, P = new Float32Array(N * 3); for (let i = 0; i < N; i++) { P[i * 3] = R(-22, 22); P[i * 3 + 1] = R(-4, 14); P[i * 3 + 2] = R(-22, 22); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  const pts = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffffff, size: 0.06, transparent: true, opacity: 0.85, depthWrite: false })); pts.frustumCulled = false; scene.add(pts);
+  WORLD_ANIM.push((t, dt) => { const c = camera.position; pts.visible = !!cfg.snow && !inPoly(c.x, c.z, FOOT); if (!pts.visible) return;
+    for (let i = 0; i < N; i++) { const j = i * 3; let x = P[j] + Math.sin(t * 0.6 + i) * dt * 0.35, y = P[j + 1] - dt * (0.9 + (i % 7) * 0.09), z = P[j + 2];
+      if (x < c.x - 22) x += 44; else if (x > c.x + 22) x -= 44; if (z < c.z - 22) z += 44; else if (z > c.z + 22) z -= 44; if (y < c.y - 4) y += 18; else if (y > c.y + 14) y -= 18;
+      P[j] = x; P[j + 1] = y; P[j + 2] = z; } g.attributes.position.needsUpdate = true; }); }
+
+// map edge
 const MAP_R = 58;
 
 const groundY = (x, z) => (Math.abs(x) < 57 && Math.abs(z) < 57) ? lotY(x, z) : groundYfar(x, z);
@@ -814,7 +1040,7 @@ function scatter(protos, list) {
 function setSeason(date) { const mo = date.getMonth(), leafy = mo >= 4 && mo <= 9; seasonal.leafy.forEach(m => m.visible = leafy); seasonal.bare.forEach(m => m.visible = !leafy); }
 
 // open suburban lots: a few big yard trees, more toward the neighbours, evergreens mixed in
-const openArea = (x, z) => inPoly(x, z, FOOT) || (x > -19 && x < 19 && z > -16 && z < ROAD_Z0 + 1) || (x > -32 && x < 28 && z > -25 && z < ROAD_Z0 + 1) || inPoly(x, z, DRIVE) || (z > ROAD_Z0 - 2 && z < ROAD_Z1 + 3);
+const openArea = (x, z) => NB.some(h => Math.abs(x - h.x) < h.w / 2 + 3 && Math.abs(z - h.z) < h.d / 2 + 3) || (z > 30 && z < 37) || inPoly(x, z, FOOT) || (x > -19 && x < 19 && z > -16 && z < ROAD_Z0 + 1) || (x > -32 && x < 28 && z > -25 && z < ROAD_Z0 + 1) || inPoly(x, z, DRIVE) || (z > ROAD_Z0 - 2 && z < ROAD_Z1 + 3);
 const BIG_OAK = { x: -20.5, z: -1.0 };
 const decList = [{ ...BIG_OAK, y: lotY(BIG_OAK.x, BIG_OAK.z), s: 1.25, sy: 1.05, r: 0.4, k: 0 }, { x: -17.5, z: 21.5, y: 0, s: 1.1, r: 2, k: 1 }, { x: 15.5, z: 19.5, y: 0, s: 1.0, r: 1, k: 2 },
   { x: 10, z: -15.5, y: lotY(10, -15.5), s: 0.5, r: 3, k: 2 }], conList = [{ x: 21, z: -6, y: 0, s: 0.9, r: 0, k: 0 }, { x: -29, z: -26, y: lotY(-29, -26), s: 1.05, r: 1, k: 1 }];
@@ -853,7 +1079,7 @@ if (!window.__LOWQ) { const P = [], C = [], N = [], I = []; let o = 0;
   mat.customProgramCacheKey = () => 'grass';
   const paved = (x, z) => inPoly(x, z, FOOT) || inPoly(x, z, DRIVE) || inPoly(x, z, WALK) || BEDS.some(b => inPoly(x, z, b)) || (x > -17.1 && x < -15.7 && z < 7.7) || (x > -15.8 && x < -8.5 && z > -14.7 && z < -10.3) || (x > ST.x0 - 0.4 && x < ST.x1 && z > ST.z0 - 0.4 && z < -10.3) || ROCK_PATH.some(([a, b]) => Math.hypot(x - a, z - b) < 1.1) || (x > 15.7 && x < 17 && z > -10.5 && z < 0)
     || (x > PORCH.x0 - 0.2 && x < PORCH.x1 + 0.2 && z > PORCH.z0 && z < PORCH.z1 + 0.8) || (x > DECK.x0 && x < DECK.x1 && z > DECK.z0 - 0.3 && z < DECK.z1)
-    || z > ROAD_Z0 - 0.1 || (x > -15.75 && x < -10.43 && z > 7.5 && z < 10.5);
+    || z > ROAD_Z0 - 0.1 || (x > RINK.x0 - 0.2 && x < RINK.x1 + 0.2 && z > RINK.z0 - 0.2 && z < RINK.z1 + 0.2) || (x > -24.3 && x < -19.7 && z > -20.8 && z < -17.2) || (x > -15.75 && x < -10.43 && z > 7.5 && z < 10.5);
   const pts = []; let tries = 0;
   while (pts.length < 36000 && tries++ < 260000) { const x = R(-34, 26), z = R(-26, ROAD_Z0); if (paved(x, z)) continue;
     const out = Math.max(-27 - x, x - 19, -19 - z, 0); if (rand() < smooth(0, 8, out)) continue; pts.push([x, z]); }
@@ -861,7 +1087,7 @@ if (!window.__LOWQ) { const P = [], C = [], N = [], I = []; let o = 0;
   pts.forEach(([x, z], i) => { const s = R(0.8, 1.3); m.compose(new THREE.Vector3(x, lotY(x, z) + 0.005, z), q.setFromAxisAngle(up, R(0, 6.28)), new THREE.Vector3(s, s * R(0.8, 1.25), s)); grassMesh.setMatrixAt(i, m); });
   grassMesh.receiveShadow = true; grassMesh.frustumCulled = false; scene.add(grassMesh); }
 
-const neighborBulbs = [];
+const neighborBulbs = [...NB_BULBS];
 // ================= Christmas light zones =================
 function line(a, b, sp = 0.3) { const n = Math.max(1, Math.round(a.distanceTo(b) / sp)); const o = []; for (let i = 0; i < n; i++) o.push(a.clone().lerp(b, i / n)); return o; }
 function poly(pts, sp) { let o = []; for (let i = 0; i < pts.length - 1; i++) o = o.concat(line(pts[i], pts[i + 1], sp)); o.push(pts.at(-1).clone()); return o; }
@@ -984,6 +1210,11 @@ gtao.blendIntensity = 0.85;
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.55, 0.9); composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const smaa = new SMAAPass(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio()); composer.addPass(smaa);
+// first-person viewmodel: its own little scene, drawn over the world (never clips into walls)
+const vmScene = new THREE.Scene(), vmCam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 10);
+const vmHemi = new THREE.HemisphereLight(0xffffff, 0x3a3a3a, 0.8), vmSun = new THREE.DirectionalLight(0xffffff, 1.5); vmSun.position.set(0.6, 1, 0.8); vmScene.add(vmHemi, vmSun);
+const vm = new THREE.Group(); vmScene.add(vm);
+const vmPass = new RenderPass(vmScene, vmCam); vmPass.clear = false; vmPass.clearDepth = true; composer.insertPass(vmPass, 1);
 // =====================================================================
 // GAME: Holiday Havoc — free-for-all on your block. Real players only (via the page's live room).
 // =====================================================================
@@ -998,7 +1229,7 @@ const CAKE = { dmg: 80, radius: 4.6, fuse: 1.8, knock: 13 };
 const HEADSHOT = 1.6;
 const NAMES = ['Sleigher', 'Frosty Fury', 'Elf on the Shelf', 'Nog Hog', 'Jingle Bell Rock', 'Krampus Jr', 'Tinsel Tim', 'Fruitcake Fan', 'Grinchling', 'Ho Ho Hoser'];
 const COLORS = ['#e74c3c', '#2ecc71', '#3498db', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fb5', '#ecf0f1', '#34495e'];
-const DEF_CFG = { mins: 5, dmg: 1, grav: 1, tod: 'sunset', resp: 3, zone: 0, speed: 1, cakes: 1 };
+const DEF_CFG = { mins: 5, dmg: 1, grav: 1, tod: 'sunset', resp: 3, zone: 0, speed: 1, cakes: 1, snow: 1 };
 
 // ---------- time of day ----------
 const TOD = { afternoon: { e: 32, az: 210 }, sunset: { e: 3.5, az: 248 }, night: { e: -22, az: 260 } };
@@ -1060,7 +1291,7 @@ function makeChar(color, name) {
   const gun = new THREE.Group(); gun.position.set(0.28, 1.12, 0.35); g.add(gun);
   const tag = nameSprite(name, color); tag.position.y = 2.35; g.add(tag);
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
-  scene.add(g); return { g, head, legs, arms, gun, gunId: null, tag, bodyMat }; }
+  g.scale.setScalar(CH_S); scene.add(g); return { g, head, legs, arms, gun, gunId: null, tag, bodyMat }; }
 function setGun(ch, id) { if (ch.gunId === id) return; ch.gunId = id; ch.gun.clear(); ch.gun.add(weaponMesh(id)); }
 function animChar(ch, e, dt, t) {
   ch.g.position.copy(e.pos); ch.g.rotation.y = e.yaw;
@@ -1079,12 +1310,12 @@ function newEnt(id, o = {}) { const e = { id, name: 'Player', color: '#e74c3c', 
 let me = null, myId = 'me';
 
 // ---------- physics ----------
-const RADIUS = 0.36, HEIGHT = 1.75, STEP = 0.48;
+const RADIUS = 0.28, HEIGHT = 1.4, STEP = 0.48, CH_S = 0.78, EYE = 1.22;
 function moveBody(e, dt) {
   const g = 22 * cfg.grav; e.vel.y -= g * dt;
   const nx = e.pos.x + e.vel.x * dt, nz = e.pos.z + e.vel.z * dt; e.pos.x = nx; e.pos.z = nz;
   for (let it = 0; it < 2; it++) for (const b of nearCols(e.pos.x - 1, e.pos.z - 1, e.pos.x + 1, e.pos.z + 1)) {
-    if (b.y1 <= e.pos.y + STEP || b.y0 >= e.pos.y + HEIGHT) continue;
+    if (b.tag === 'ceil' || b.y1 <= e.pos.y + STEP || b.y0 >= e.pos.y + HEIGHT) continue;
     const cx = clamp(e.pos.x, b.x0, b.x1), cz = clamp(e.pos.z, b.z0, b.z1), dx = e.pos.x - cx, dz = e.pos.z - cz, d2 = dx * dx + dz * dz;
     if (d2 >= RADIUS * RADIUS) continue;
     if (d2 > 1e-8) { const d = Math.sqrt(d2), p = RADIUS - d; e.pos.x += dx / d * p; e.pos.z += dz / d * p; }
@@ -1095,7 +1326,7 @@ function moveBody(e, dt) {
   let floor = groundAt(e.pos.x, e.pos.z);
   for (const b of nearCols(e.pos.x - 0.5, e.pos.z - 0.5, e.pos.x + 0.5, e.pos.z + 0.5)) {
     if (e.pos.x < b.x0 - RADIUS * 0.7 || e.pos.x > b.x1 + RADIUS * 0.7 || e.pos.z < b.z0 - RADIUS * 0.7 || e.pos.z > b.z1 + RADIUS * 0.7) continue;
-    if (b.y1 <= Math.max(prevY, e.pos.y) + STEP && b.y1 > floor) floor = b.y1;
+    if (b.tag !== 'ceil' && b.y1 <= Math.max(prevY, e.pos.y) + STEP && b.y1 > floor) floor = b.y1;
     if (e.vel.y > 0 && b.y0 > prevY + HEIGHT - 0.1 && b.y0 < e.pos.y + HEIGHT) { e.pos.y = b.y0 - HEIGHT; e.vel.y = 0; } }
   if (e.pos.y <= floor) { if (e.vel.y < -1 && floor - e.pos.y < STEP + 0.1) e.pos.y = floor; else e.pos.y = Math.max(e.pos.y, floor); if (e.pos.y <= floor + 0.001) { e.pos.y = floor; e.vel.y = Math.max(0, e.vel.y); } e.onGround = true; }
   else e.onGround = e.pos.y - floor < 0.06;
@@ -1226,10 +1457,12 @@ const camDir = new THREE.Vector3(), aimPoint = new THREE.Vector3();
 function curW() { return W[me.weapons[me.slot]]; }
 function aimTarget() { camera.getWorldDirection(camDir); const o = camera.position.clone();
   let best = Math.min(rayBoxes(o, camDir, 300), rayGround(o, camDir, 300));
-  ents.forEach(e => { if (e === me || !e.alive) return; const t = raySphere(o, camDir, V(e.pos.x, e.pos.y + 1.05, e.pos.z), 0.55); if (t < best) best = t; });
+  ents.forEach(e => { if (e === me || !e.alive) return; const t = raySphere(o, camDir, V(e.pos.x, e.pos.y + 0.75, e.pos.z), 0.5); if (t < best) best = t; });
   return aimPoint.copy(o).addScaledVector(camDir, Math.max(best, 2)); }
 function raySphere(o, d, c, r) { const oc = o.clone().sub(c), b = oc.dot(d), cc = oc.lengthSq() - r * r, h = b * b - cc; if (h < 0) return Infinity; const t = -b - Math.sqrt(h); return t >= 0 ? t : Infinity; }
-function muzzle(e) { const s = Math.sin(e.yaw), c = Math.cos(e.yaw); return V(e.pos.x + c * 0.3 + s * 0.6, e.pos.y + 1.35, e.pos.z - s * 0.3 + c * 0.6); }
+function muzzle(e) { const eye = camera.position.clone(); camera.getWorldDirection(camDir); const right = V(-Math.cos(e.yaw), 0, Math.sin(e.yaw));
+  const m = eye.clone().addScaledVector(camDir, 0.55).addScaledVector(right, 0.14).add(V(0, -0.12, 0)), d = m.clone().sub(eye), L = d.length(); d.normalize();
+  return rayBoxes(eye, d, L + 0.05) < L + 0.05 ? eye.addScaledVector(camDir, 0.05) : m; }
 function shoot() {
   if (!me.alive || matchOver()) return; const id = me.weapons[me.slot], w = W[id];
   if (me.reloadT > 0 || me.fireT > 0) return; if ((me.ammo[id] ?? 0) <= 0) { reload(); return; }
@@ -1238,7 +1471,7 @@ function shoot() {
   if (id === 'blow') { blowFx(o, d); blowHit(o, d); ev({ k: 's', w: id, o: [r2(o.x), r2(o.y), r2(o.z)], d: [r2(d.x), r2(d.y), r2(d.z)] }); return; }
   const sd = Math.floor(Math.random() * 1e6) + 1; fireVisual(id, o, d, sd, myId, true);
   ev({ k: 's', w: id, o: [r2(o.x), r2(o.y), r2(o.z)], d: [Math.round(d.x * 1e4) / 1e4, Math.round(d.y * 1e4) / 1e4, Math.round(d.z * 1e4) / 1e4], sd });
-  recoil = id === 'cane' ? 0.06 : id === 'orn' ? 0.05 : 0.012; }
+  recoil = id === 'cane' ? 0.06 : id === 'orn' ? 0.05 : 0.012; vmKick = id === 'cane' ? 0.12 : id === 'orn' ? 0.1 : 0.035; }
 function fireVisual(id, o, d, sd, owner, live = false) { const w = W[id]; let s = sd;
   const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
   const spread = (id === 'cane' && aiming && live) ? w.scoped : w.spread;
@@ -1246,7 +1479,7 @@ function fireVisual(id, o, d, sd, owner, live = false) { const w = W[id]; let s 
     spawnProj({ pos: o.clone(), vel: dd.multiplyScalar(w.speed), grav: w.grav, life: w.life, size: w.size, color: w.color, dmg: w.dmg, wid: id, owner, visual: !live }); } }
 function blowFx(o, d) { for (let i = 0; i < 4; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.08), new THREE.MeshBasicMaterial({ color: leafCols[i % 4], side: THREE.DoubleSide }));
   m.position.copy(o); scene.add(m); fx.push({ m, v: d.clone().multiplyScalar(R(9, 14)).add(new THREE.Vector3().randomDirection().multiplyScalar(2)), life: 0.7, age: 0, spin: R(5, 12) }); } }
-function blowHit(o, d) { ents.forEach(e => { if (e === me || !e.alive) return; const c = V(e.pos.x, e.pos.y + 1, e.pos.z), to = c.clone().sub(o), dist = to.length();
+function blowHit(o, d) { ents.forEach(e => { if (e === me || !e.alive) return; const c = V(e.pos.x, e.pos.y + 0.75, e.pos.z), to = c.clone().sub(o), dist = to.length();
   if (dist > W.blow.range || to.normalize().dot(d) < Math.cos(W.blow.cone) || !losClear(o, c)) return;
   const k = d.clone().multiplyScalar(W.blow.knock * (1 - dist / W.blow.range * 0.5)); k.y += 3.5; dealHit(e, W.blow.dmg, 'blow', k, false); }); }
 function dealHit(e, dmg, wid, k = V(0, 0, 0), hs = false) { dmg = dmg * cfg.dmg; if (e.prot > 0) return;
@@ -1256,7 +1489,7 @@ function dealHit(e, dmg, wid, k = V(0, 0, 0), hs = false) { dmg = dmg * cfg.dmg;
 function throwCake() { if (!me.alive || me.cakes <= 0 || matchOver()) return; me.cakes--; const o = muzzle(me), d = aimTarget().sub(o).normalize(), v = d.multiplyScalar(19).add(V(0, 4, 0)).add(me.vel.clone().multiplyScalar(0.4));
   spawnProj({ cake: true, pos: o, vel: v, owner: myId, fuse: CAKE.fuse }); ev({ k: 'c', o: [r2(o.x), r2(o.y), r2(o.z)], v: [r2(v.x), r2(v.y), r2(v.z)] }); updateHUD(); }
 function explode(p, owner) { boom(p); if (owner !== myId) return;
-  ents.forEach(e => { if (!e.alive) return; const c = V(e.pos.x, e.pos.y + 1, e.pos.z), dist = c.distanceTo(p); if (dist > CAKE.radius) return;
+  ents.forEach(e => { if (!e.alive) return; const c = V(e.pos.x, e.pos.y + 0.75, e.pos.z), dist = c.distanceTo(p); if (dist > CAKE.radius) return;
     const f = 1 - dist / CAKE.radius, k = c.clone().sub(p).normalize().multiplyScalar(CAKE.knock * f).add(V(0, 6 * f, 0));
     if (e === me) { takeHit(CAKE.dmg * f * 0.5 * cfg.dmg, myId, 'cake', k); } else dealHit(e, CAKE.dmg * f, 'cake', k); }); }
 function reload() { const id = me.weapons[me.slot]; if (me.reloadT > 0 || me.ammo[id] >= W[id].mag) return; me.reloadT = W[id].reload; }
@@ -1315,22 +1548,32 @@ const tb = (id, down, up) => { const b = $(id); b.addEventListener('touchstart',
 tb('tFire', () => firing = true, () => firing = false); tb('tJump', () => keys.Space = true, () => keys.Space = false); tb('tCake', () => throwCake()); tb('tSwap', () => { if (me.weapons[1]) me.slot = 1 - me.slot; updateHUD(); });
 tb('tAim', () => aiming = !aiming); tb('tReload', () => reload()); tb('tMenu', () => openMenu());
 
-// ---------- camera ----------
-const camPivot = new THREE.Vector3(), camWant = new THREE.Vector3(); let camDist = 3.2;
+// ---------- camera: first person ----------
+let bobPh = 0, deathCam = 0, vmKick = 0, vmSwap = 0, vmAds = 0, vmId = null, vmColor = null;
 function updateCamera(dt) { const e = me; if (!e) return;
-  const z = aiming && curW().zoom ? 1 : 0, fov = z ? curW().zoom : (aiming ? 48 : 70); camera.fov += (fov - camera.fov) * Math.min(1, dt * 12); camera.updateProjectionMatrix();
-  camPivot.set(e.pos.x, e.pos.y + 1.6, e.pos.z);
-  const back = z ? 0.2 : aiming ? 1.8 : 3.4, side = z ? 0.0 : 0.65, cp = Math.cos(e.pitch), sp = Math.sin(e.pitch);
-  const fwd = V(Math.sin(e.yaw) * cp, sp, Math.cos(e.yaw) * cp), right = V(-Math.cos(e.yaw), 0, Math.sin(e.yaw));
-  const pv = camPivot.clone().addScaledVector(right, side).add(V(0, 0.15, 0));
-  const dirBack = fwd.clone().multiplyScalar(-1); let d = back; const hitD = rayBoxes(pv, dirBack, back + 0.3); if (hitD < d + 0.3) d = Math.max(0.15, hitD - 0.3);
-  camWant.copy(pv).addScaledVector(dirBack, d); camera.position.copy(camWant);
-  const gy = groundAt(camera.position.x, camera.position.z) + 0.3; if (camera.position.y < gy) camera.position.y = gy;
-  camera.lookAt(pv.clone().addScaledVector(fwd, 20).add(V(0, recoil * 20, 0))); recoil *= Math.exp(-dt * 10);
-  if (me.ch) me.ch.g.visible = !(z && aiming) && me.alive || !me.alive;
-  // indoors? hide the roofs so you can see
-  const inside = inPoly(camera.position.x, camera.position.z, FOOT) || (inPoly(e.pos.x, e.pos.z, FOOT) && camera.position.y < 6);
-  ROOF_PARTS.forEach(p => p.visible = !inside); }
+  const zoomed = aiming && curW().zoom && e.alive, fov = zoomed ? curW().zoom : (aiming ? 58 : 78); camera.fov += (fov - camera.fov) * Math.min(1, dt * 14); camera.updateProjectionMatrix();
+  const cp = Math.cos(e.pitch), sp = Math.sin(e.pitch), fwd = V(Math.sin(e.yaw) * cp, sp, Math.cos(e.yaw) * cp);
+  if (e.alive || !inGame) { deathCam = 0; const hs = Math.hypot(e.vel.x, e.vel.z); if (e.onGround) bobPh += dt * hs * 1.7;
+    const bob = e.onGround && inGame ? Math.sin(bobPh * 2) * 0.03 * Math.min(1, hs / 5) : 0;
+    camera.position.set(e.pos.x, e.pos.y + EYE + bob, e.pos.z); camera.lookAt(camera.position.clone().add(fwd).add(V(0, recoil, 0))); }
+  else { deathCam = Math.min(1, deathCam + dt * 1.4); const piv = V(e.pos.x, e.pos.y + 0.45, e.pos.z), back = V(-Math.sin(e.yaw), 0, -Math.cos(e.yaw));
+    const want = piv.clone().addScaledVector(back, 3.2 * deathCam).add(V(0, 0.8 + 1.6 * deathCam, 0)), d = want.clone().sub(piv), L = d.length(); d.normalize();
+    camera.position.copy(piv).addScaledVector(d, Math.max(0.3, Math.min(L, rayBoxes(piv, d, L + 0.3) - 0.3))); camera.lookAt(piv); }
+  porchG.visible = !inPoly(camera.position.x, camera.position.z, FOOT);
+  recoil *= Math.exp(-dt * 12); if (me.ch) me.ch.g.visible = !e.alive && inGame;
+  updateViewmodel(dt); }
+function buildVM() { vm.clear(); const w = weaponMesh(vmId); w.rotation.y = Math.PI; w.scale.setScalar(0.62); w.position.set(0, 0.02, -0.05); vm.add(w);
+  const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.5), std({ color: me.color, roughness: 0.75 })); sleeve.position.set(0.05, -0.13, 0.3); sleeve.rotation.x = 0.28; vm.add(sleeve);
+  const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.13, 0.06), hatWhite); cuff.position.set(0.04, -0.105, 0.09); cuff.rotation.x = 0.28; vm.add(cuff);
+  const hand = new THREE.Mesh(new THREE.SphereGeometry(0.058, 14, 10), skinMat); hand.scale.set(1, 0.9, 1.2); hand.position.set(0.02, -0.08, 0.03); vm.add(hand); }
+function updateViewmodel(dt) { const show = inGame && me.alive && !(aiming && curW().zoom); vm.visible = show; if (!show) return;
+  const id = me.weapons[me.slot]; if (id !== vmId || me.color !== vmColor) { vmId = id; vmColor = me.color; buildVM(); vmSwap = 1; }
+  vmSwap = Math.max(0, vmSwap - dt * 4); vmKick *= Math.exp(-dt * 14); vmAds += ((aiming ? 1 : 0) - vmAds) * Math.min(1, dt * 12);
+  const hs = Math.hypot(me.vel.x, me.vel.z), k = me.onGround ? Math.min(1, hs / 5) : 0.15, w = curW();
+  const rl = me.reloadT > 0 ? Math.sin(clamp(1 - me.reloadT / w.reload, 0, 1) * Math.PI) : 0;
+  vm.position.set(0.14 * (1 - vmAds) + Math.cos(bobPh) * 0.012 * k, -0.115 + 0.03 * vmAds + Math.abs(Math.sin(bobPh)) * 0.014 * k - rl * 0.2 - vmSwap * 0.3, -0.34 + vmKick);
+  vm.rotation.set(rl * 0.9 + vmKick * 2.2, Math.cos(bobPh) * 0.02 * k, rl * 0.4);
+  vmSun.color.copy(sunL.color); vmSun.intensity = 0.4 + sunL.intensity * 0.45; vmHemi.color.copy(hemi.color).lerp(new THREE.Color(1, 1, 1), 0.5); vmHemi.intensity = 0.7 + nightK * 0.2; vmScene.environment = scene.environment; }
 
 // ---------- HUD ----------
 function toast(msg, ms = 1500) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = msg; $('toasts').appendChild(d); setTimeout(() => d.remove(), ms); }
@@ -1338,7 +1581,7 @@ function feed(killer, victim, wid) { const verbs = { snow: 'snowballed', cane: '
   const d = document.createElement('div'); d.className = 'feedrow'; d.innerHTML = `<b></b> ${verbs[wid] || 'got'} <b></b>`; d.querySelectorAll('b')[0].textContent = killer; d.querySelectorAll('b')[1].textContent = victim;
   $('feed').prepend(d); setTimeout(() => d.remove(), 6000); while ($('feed').children.length > 5) $('feed').lastChild.remove(); }
 function hitMarker(hs) { const h = $('hitm'); h.classList.remove('on', 'hs'); void h.offsetWidth; h.classList.add('on'); if (hs) h.classList.add('hs'); }
-function dmgNumber(e, dmg, hs) { const p = V(e.pos.x, e.pos.y + 2.1, e.pos.z).project(camera); if (p.z > 1) return; const d = document.createElement('div'); d.className = 'dnum' + (hs ? ' hs' : '');
+function dmgNumber(e, dmg, hs) { const p = V(e.pos.x, e.pos.y + 1.7, e.pos.z).project(camera); if (p.z > 1) return; const d = document.createElement('div'); d.className = 'dnum' + (hs ? ' hs' : '');
   d.textContent = Math.round(dmg) + (hs ? '!' : ''); d.style.left = (p.x * 0.5 + 0.5) * innerWidth + R(-20, 20) + 'px'; d.style.top = (-p.y * 0.5 + 0.5) * innerHeight + 'px'; document.body.appendChild(d); setTimeout(() => d.remove(), 800); }
 function flashDamage() { const f = $('dmgflash'); f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); }
 function updateHUD() { if (!me) return; $('hpbar').style.width = Math.max(0, me.hp) + '%'; $('arbar').style.width = me.ar + '%'; $('hptxt').textContent = Math.ceil(Math.max(0, me.hp));
@@ -1377,6 +1620,7 @@ const SETTINGS = [
   ['grav', 'Gravity', [[1, 'Normal'], [0.55, 'Low'], [0.3, 'Moon']]],
   ['speed', 'Move speed', [[1, 'Normal'], [1.35, 'Zoomies']]],
   ['cakes', 'Starting fruitcakes', [[0, '0'], [1, '1'], [3, '3']]],
+  ['snow', 'Snow', [[1, 'Snowy'], [0, 'No snow']]],
   ['tod', 'Time of day', [['afternoon', 'Afternoon'], ['sunset', 'Sunset'], ['night', 'Night (lights!)']]] ];
 function renderHostUI() { const host = connectedPeers.find(p => p.peer === hostPeer);
   $('hostline').textContent = isHost ? '👑 You are the host — these settings apply to everyone' : `👑 Host: ${String(host?.presence?.nm || 'someone').slice(0, 18)} (only the host can change these)`;
@@ -1415,7 +1659,7 @@ function frame() {
       if (me.reloadT > 0) { me.reloadT -= dt; if (me.reloadT <= 0) { me.ammo[me.weapons[me.slot]] = curW().mag; updateHUD(); } }
       let mx = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0) + joy.x, mz = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0) - joy.y; const ml = Math.hypot(mx, mz); if (ml > 1) { mx /= ml; mz /= ml; }
       const spd = (keys.ShiftLeft || keys.ShiftRight ? 7.6 : 5.2) * (aiming ? 0.6 : 1) * cfg.speed, s = Math.sin(me.yaw), c = Math.cos(me.yaw);
-      const wx = (s * mz - c * mx) * spd, wz = (c * mz + s * mx) * spd, acc = me.onGround ? 14 : 3;
+      const wx = (s * mz - c * mx) * spd, wz = (c * mz + s * mx) * spd, acc = me.onGround ? (onIce(me) ? 1.1 : 14) : 3;
       me.vel.x += (wx - me.vel.x) * Math.min(1, acc * dt); me.vel.z += (wz - me.vel.z) * Math.min(1, acc * dt);
       if (keys.Space && me.onGround) { me.vel.y = 8.2; me.onGround = false; }
       moveBody(me, dt); tryPickup();
@@ -1440,7 +1684,7 @@ function frame() {
     p.vel.y -= p.grav * cfg.grav * dt; const step = p.vel.clone().multiplyScalar(dt), L = step.length(), d = step.clone().normalize();
     let hitT = Math.min(rayBoxes(prev, d, L), rayGround(prev, d, L)), hitE = null, hs = false;
     if (!p.visual) ents.forEach(e => { if (e.id === p.owner || !e.alive || (e.remote && e.inMenu)) return;
-      const th = raySphere(prev, d, V(e.pos.x, e.pos.y + 1.6, e.pos.z), 0.3), tb2 = raySphere(prev, d, V(e.pos.x, e.pos.y + 0.95, e.pos.z), 0.48), tt = Math.min(th, tb2);
+      const th = raySphere(prev, d, V(e.pos.x, e.pos.y + 1.27, e.pos.z), 0.25), tb2 = raySphere(prev, d, V(e.pos.x, e.pos.y + 0.72, e.pos.z), 0.4), tt = Math.min(th, tb2);
       if (tt < hitT && tt <= L) { hitT = tt; hitE = e; hs = th <= tb2; } });
     if (hitT <= L) { const hp = prev.clone().addScaledVector(d, hitT); puff(hp, p.color, p.wid === 'snow' ? 8 : 4, 2.5, p.wid === 'snow' ? 0.05 : 0.03, 0.45);
       if (hitE) dealHit(hitE, p.dmg * (hs ? HEADSHOT : 1), p.wid, d.clone().multiplyScalar(p.wid === 'snow' ? 1.2 : 2.5), hs);
@@ -1463,13 +1707,13 @@ function frame() {
   // network
   netT -= dt; if (netT <= 0) { netT = 1 / 15; sendPresence(); syncDummies(); }
   // world
-  updateBulbs(t); skyU.uTime.value = t; skyDome.position.copy(camera.position);
+  updateBulbs(t); WORLD_ANIM.forEach(f => f(t, dt)); WX.uSnow.value = cfg.snow ? 0.62 : 0; skyU.uTime.value = t; skyDome.position.copy(camera.position);
   if (me) { sunL.target.position.set(me.pos.x, me.pos.y, me.pos.z); sunL.position.copy(sunL.userData.dir || V(0, 1, 0)).multiplyScalar(80).add(sunL.target.position); }
   WX.uUpView.value.set(0, 1, 0).transformDirection(camera.matrixWorldInverse); GRASS.uTime.value = t;
   if (inGame && me) { drawMinimap(); const ammo = me.ammo[me.weapons[me.slot]]; $('ammoBig').textContent = me.reloadT > 0 ? '…' : ammo; $('xhair').classList.toggle('scope', aiming && !!curW().zoom); }
   composer.render(); requestAnimationFrame(frame); }
-addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
-window.__hh = { fire: on => { firing = on; }, cake: () => throwCake(), shots: () => projs.length, me: () => me, ents, startPlay: () => $('playBtn').click(), applyTOD, look: (yaw, pitch) => { me.yaw = yaw; me.pitch = pitch; }, tp: (x, y, z) => me.pos.set(x, y, z) };
+addEventListener('resize', () => { camera.aspect = vmCam.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); vmCam.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
+window.__hh = { vm: () => vm, cfg: () => cfg, fire: on => { firing = on; }, cake: () => throwCake(), shots: () => projs.length, me: () => me, ents, startPlay: () => $('playBtn').click(), applyTOD, look: (yaw, pitch) => { me.yaw = yaw; me.pitch = pitch; }, tp: (x, y, z) => me.pos.set(x, y, z) };
 $('loading').remove(); openMenu(); frame();
 
 </script>
